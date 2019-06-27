@@ -16,20 +16,6 @@ package com.google.android.things.iotcore;
 
 import android.support.annotation.NonNull;
 
-import static com.google.common.truth.Truth.assertThat;
-import static org.junit.Assert.fail;
-import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.eq;
-import static org.mockito.Mockito.doNothing;
-import static org.mockito.Mockito.doThrow;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.never;
-import static org.mockito.Mockito.reset;
-import static org.mockito.Mockito.spy;
-import static org.mockito.Mockito.times;
-import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
-
 import org.eclipse.paho.client.mqttv3.MqttCallback;
 import org.eclipse.paho.client.mqttv3.MqttClient;
 import org.eclipse.paho.client.mqttv3.MqttConnectOptions;
@@ -55,13 +41,27 @@ import java.util.concurrent.atomic.AtomicReference;
 
 import javax.net.ssl.SSLException;
 
+import static com.google.common.truth.Truth.assertThat;
+import static org.junit.Assert.fail;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.reset;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.when;
+
 /** IotCoreClient unit tests. */
 @RunWith(RobolectricTestRunner.class)
 public class IotCoreClientTest {
     private static final String TOPIC = "topic";
     private static final String COMMAND = "command";
     private static final byte[] DATA = "Hello world".getBytes();
-    private static final int QOS = TelemetryEvent.QOS_AT_LEAST_ONCE;
+    private static final int QOS = TopicEvent.QOS_AT_LEAST_ONCE;
 
     private final ConnectionParams mMockConnectionParams = mock(ConnectionParams.class);
     private final MqttClient mMockMqttClient = mock(MqttClient.class);
@@ -76,12 +76,15 @@ public class IotCoreClientTest {
             mock(OnCommandListener.class);
     private final Semaphore mMockSemaphore = mock(Semaphore.class);
     private final BoundedExponentialBackoff mMockBackoff = mock(BoundedExponentialBackoff.class);
-    private final TelemetryEvent mMockTelemetryEvent = mock(TelemetryEvent.class);
+    private final TopicEvent mMockTopicEvent = mock(TopicEvent.class);
     private final PrivateKey mMockPrivateKey = mock(PrivateKey.class);
     private final PublicKey mMockPublicKey = mock(PublicKey.class);
 
     @SuppressWarnings("unchecked")
-    private final Queue<TelemetryEvent> mMockTelemetryQueue = mock(Queue.class);
+    private final Queue<TopicEvent> mMockTelemetryQueue = mock(Queue.class);
+
+    @SuppressWarnings("unchecked")
+    private final Queue<TopicEvent> mMockPubSubTopicQueue = mock(Queue.class);
 
     // Cant mock methods in AtomicBoolean
     private AtomicBoolean mClientConnectionStateSpy;
@@ -107,6 +110,7 @@ public class IotCoreClientTest {
                 mRunBackgroundThreadSpy,
                 mUnsentDeviceStateSpy,
                 mMockTelemetryQueue,
+                mMockPubSubTopicQueue,
                 mMockConnectionCallbackExecutor,
                 mMockConnectionCallback,
                 mMockOnConfigurationExecutor,
@@ -129,10 +133,10 @@ public class IotCoreClientTest {
         // JwtGenerator mock
         when(mMockJwtGenerator.createJwt()).thenReturn("JWT");
 
-        // TelemetryEvent mock
-        when(mMockTelemetryEvent.getTopicSubpath()).thenReturn(TOPIC);
-        when(mMockTelemetryEvent.getData()).thenReturn(DATA);
-        when(mMockTelemetryEvent.getQos()).thenReturn(QOS);
+        // TopicEvent mock
+        when(mMockTopicEvent.getTopicSubpath()).thenReturn(TOPIC);
+        when(mMockTopicEvent.getData()).thenReturn(DATA);
+        when(mMockTopicEvent.getQos()).thenReturn(QOS);
 
         // ConnectionParams mock
         when(mMockConnectionParams.getTelemetryTopic()).thenReturn(TOPIC);
@@ -155,6 +159,7 @@ public class IotCoreClientTest {
                 mRunBackgroundThreadSpy,
                 mUnsentDeviceStateSpy,
                 mMockTelemetryQueue,
+                mMockPubSubTopicQueue,
                 serialExecutor,
                 mMockConnectionCallback,
                 serialExecutor,
@@ -187,7 +192,7 @@ public class IotCoreClientTest {
         reset(mMockOnConfigurationExecutor);
         reset(mMockOnConfigurationListener);
         reset(mMockSemaphore);
-        reset(mMockTelemetryEvent);
+        reset(mMockTopicEvent);
         reset(mMockTelemetryQueue);
         reset(mClientConnectionStateSpy);
         reset(mMockPrivateKey);
@@ -239,20 +244,20 @@ public class IotCoreClientTest {
 
     @Test
     public void testPublishTelemetryEmptyQueue() {
-        when(mMockTelemetryQueue.offer(mMockTelemetryEvent)).thenReturn(true);
+        when(mMockTelemetryQueue.offer(mMockTopicEvent)).thenReturn(true);
         when(mMockTelemetryQueue.size()).thenReturn(0).thenReturn(1);
 
-        assertThat(mTestIotCoreClient.publishTelemetry(mMockTelemetryEvent)).isTrue();
+        assertThat(mTestIotCoreClient.publishTelemetry(mMockTopicEvent)).isTrue();
 
         verify(mMockSemaphore).release();
     }
 
     @Test
     public void testPublishTelemetryFullQueue() {
-        when(mMockTelemetryQueue.offer(mMockTelemetryEvent)).thenReturn(false);
+        when(mMockTelemetryQueue.offer(mMockTopicEvent)).thenReturn(false);
         when(mMockTelemetryQueue.size()).thenReturn(1);
 
-        assertThat(mTestIotCoreClient.publishTelemetry(mMockTelemetryEvent)).isFalse();
+        assertThat(mTestIotCoreClient.publishTelemetry(mMockTopicEvent)).isFalse();
 
         verify(mMockSemaphore, never()).release();
     }
@@ -427,7 +432,7 @@ public class IotCoreClientTest {
     @Test
     public void testPublishTelemetrySuccess() throws MqttException {
         when(mMockMqttClient.isConnected()).thenReturn(true).thenReturn(true).thenReturn(false);
-        when(mMockTelemetryQueue.poll()).thenReturn(mMockTelemetryEvent);
+        when(mMockTelemetryQueue.poll()).thenReturn(mMockTopicEvent);
         mRunBackgroundThreadSpy.set(true);
 
         mTestIotCoreClient.reconnectLoop();
@@ -437,7 +442,7 @@ public class IotCoreClientTest {
 
     @Test
     public void testTelemetryEventSentAfterFailure() throws MqttException {
-        when(mMockTelemetryQueue.poll()).thenReturn(mMockTelemetryEvent).thenReturn(null);
+        when(mMockTelemetryQueue.poll()).thenReturn(mMockTopicEvent).thenReturn(null);
         when(mMockBackoff.nextBackoff()).thenReturn(0L);
         mRunBackgroundThreadSpy.set(true);
 
@@ -589,8 +594,8 @@ public class IotCoreClientTest {
                 .setRegistry("registry", "region")
                 .setDeviceId("device")
                 .build();
-        TelemetryEvent telemetryMessage =
-                new TelemetryEvent(new byte[1], "abc", TelemetryEvent.QOS_AT_LEAST_ONCE);
+        TopicEvent telemetryMessage =
+                new TopicEvent(new byte[1], "abc", TopicEvent.QOS_AT_LEAST_ONCE);
 
         assertThat(connectionParams.getTelemetryTopic() + telemetryMessage.getTopicSubpath())
                 .isEqualTo("/devices/device/events/abc");
